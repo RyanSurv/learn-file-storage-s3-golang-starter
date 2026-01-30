@@ -85,7 +85,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusBadRequest, "Error creating temp file", err)
 		return
 	}
-	defer os.Remove("tubely-upload.mp4")
+	defer os.Remove(diskFile.Name())
 	defer diskFile.Close()
 
 	_, err = io.Copy(diskFile, file)
@@ -100,7 +100,6 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	// get aspect ratio to appropriately prefix object
 	aspectRatio, err := getVideoAspectRatio(diskFile.Name())
 	if err != nil {
-		fmt.Println(err)
 		respondWithError(w, http.StatusBadRequest, "Error getting video aspect ratio", err)
 		return
 	}
@@ -114,6 +113,22 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		prefix = "other"
 	}
 
+	// process the video to alwsy have "fast start" encoding
+	processedFilePath, err := processVideoForFastStart(diskFile.Name())
+	if err != nil {
+		fmt.Println(err)
+		respondWithError(w, http.StatusBadRequest, "Error processing video", err)
+		return
+	}
+
+	processedFile, err := os.Open(processedFilePath)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Error opening processed video", err)
+		return
+	}
+	defer os.Remove(processedFile.Name())
+	defer processedFile.Close()
+
 	key := make([]byte, 32)
 	rand.Read(key)
 	encoded := base64.RawURLEncoding.EncodeToString(key)
@@ -121,7 +136,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	_, err = cfg.s3Client.PutObject(context.Background(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &finalKey,
-		Body:        diskFile,
+		Body:        processedFile,
 		ContentType: &mediaType,
 	})
 	if err != nil {
