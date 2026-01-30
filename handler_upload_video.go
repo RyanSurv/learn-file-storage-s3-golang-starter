@@ -144,14 +144,25 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s3VideoUrl := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, finalKey)
-	dbVideo.VideoURL = &s3VideoUrl
+	// s3VideoUrl := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, finalKey)
+	// dbVideo.VideoURL = &s3VideoUrl
+
+	presignedURLKey := fmt.Sprintf("%s,%s/%s.mp4", cfg.s3Bucket, prefix, encoded)
+	dbVideo.VideoURL = &presignedURLKey
+
 	if err := cfg.db.UpdateVideo(dbVideo); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Error updating video in DB", err)
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, finalKey)
+	// generate presigned URL
+	presignedURLVideo, err := cfg.dbVideoToSignedVideo(dbVideo)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Error getting presigned video URL", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, presignedURLVideo)
 }
 
 func getVideoAspectRatio(filePath string) (string, error) {
